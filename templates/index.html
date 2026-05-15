@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fake News Detector</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><span class="badge">FAKE</span> NEWS DETECTOR</h1>
+            <p class="subtitle">Trained on 20 Newsgroups · Pure ML · No API</p>
+            <div id="status-bar" class="status-bar">Checking model status...</div>
+        </header>
+
+        <main>
+            <div class="input-section">
+                <div class="examples">
+                    <span>Try examples:</span>
+                    <button class="example-btn" data-type="sci">Science</button>
+                    <button class="example-btn" data-type="politics">Politics</button>
+                    <button class="example-btn" data-type="medical">Medical</button>
+                    <button class="example-btn" data-type="religion">Religion</button>
+                    <button class="example-btn" data-type="tech">Tech</button>
+                </div>
+                <textarea id="article-input" placeholder="Paste article text here... (minimum 20 characters)"></textarea>
+                <div class="actions">
+                    <button id="analyze-btn" class="primary-btn">Analyze Text</button>
+                </div>
+            </div>
+
+            <div id="loading" class="hidden">
+                <div class="spinner"></div>
+                <p>Analyzing text...</p>
+            </div>
+
+            <div id="results" class="results-panel hidden">
+                <div class="verdict-container">
+                    <div id="verdict-badge" class="verdict-badge"></div>
+                </div>
+
+                <div class="confidence-bars">
+                    <div class="bar-group">
+                        <div class="bar-header">
+                            <span>Fake Confidence</span>
+                            <span id="fake-percent">0%</span>
+                        </div>
+                        <div class="bar-track">
+                            <div id="fake-bar" class="bar-fill red"></div>
+                        </div>
+                    </div>
+                    <div class="bar-group">
+                        <div class="bar-header">
+                            <span>Real Confidence</span>
+                            <span id="real-percent">0%</span>
+                        </div>
+                        <div class="bar-track">
+                            <div id="real-bar" class="bar-fill green"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="scores-grid">
+                    <div class="score-card">
+                        <h4>Sensationalism</h4>
+                        <div class="score-value" id="sens-score">0.0</div>
+                        <div class="mini-bar"><div id="sens-bar" class="mini-fill"></div></div>
+                    </div>
+                    <div class="score-card">
+                        <h4>Emotional Tone</h4>
+                        <div class="score-value" id="emo-score">0.0</div>
+                        <div class="mini-bar"><div id="emo-bar" class="mini-fill"></div></div>
+                    </div>
+                    <div class="score-card">
+                        <h4>Source Citations</h4>
+                        <div class="score-value" id="source-score">0.0</div>
+                        <div class="mini-bar"><div id="source-bar" class="mini-fill"></div></div>
+                    </div>
+                    <div class="score-card">
+                        <h4>Complexity</h4>
+                        <div class="score-value" id="comp-score">0.0</div>
+                        <div class="mini-bar"><div id="comp-bar" class="mini-fill"></div></div>
+                    </div>
+                </div>
+
+                <div class="words-columns">
+                    <div class="word-col">
+                        <h4>Fake Trigger Words</h4>
+                        <div id="fake-words" class="word-chips red-chips"></div>
+                    </div>
+                    <div class="word-col">
+                        <h4>Real Indicator Words</h4>
+                        <div id="real-words" class="word-chips green-chips"></div>
+                    </div>
+                </div>
+
+                <div class="categories-panel">
+                    <h4>Identified Categories</h4>
+                    <div id="primary-category" class="cat-tag primary"></div>
+                    <div id="related-categories" class="related-cats"></div>
+                </div>
+
+                <footer>
+                    <p id="model-info"></p>
+                </footer>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const examples = {
+            sci: "The Hubble Space Telescope has discovered a new exoplanet orbiting a distant star in the Orion nebula. Spectroscopic analysis suggests the presence of water vapor in its atmosphere.",
+            politics: "BREAKING: Deep state operatives have just LEAKED a massive conspiracy! They are trying to hide the truth from the sheeple. WAKE UP! The election was completely rigged and the mainstream media is lying to you!",
+            medical: "A recent peer-reviewed study published in the Journal of Medicine indicates that the new treatment protocol reduces recovery time by 20%. The researchers conducted a randomized controlled trial with a sample size of 500 patients.",
+            religion: "This is the absolute truth that the scientific establishment refuses to acknowledge! The divine miracles are happening every day but they are CENSORED by the globalists. Share this before it gets DELETED!",
+            tech: "Microsoft Windows 10 update KB456 causes blue screen errors on systems with specific Intel hardware. Users report that uninstalling the patch resolves the issue. The company is working on a fix."
+        };
+
+        document.querySelectorAll('.example-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.getElementById('article-input').value = examples[e.target.dataset.type];
+            });
+        });
+
+        // Check status on load
+        fetch('/status')
+            .then(res => res.json())
+            .then(data => {
+                const statusBar = document.getElementById('status-bar');
+                if (data.status === 'ready') {
+                    statusBar.innerHTML = `<span class="ready">Model Ready</span> (Test Acc: ${(data.stats.test_accuracy * 100).toFixed(1)}%)`;
+                } else {
+                    statusBar.innerHTML = `<span class="training">Training in progress... Please wait.</span>`;
+                }
+            })
+            .catch(err => {
+                document.getElementById('status-bar').textContent = "Failed to connect to server.";
+            });
+
+        document.getElementById('analyze-btn').addEventListener('click', () => {
+            const text = document.getElementById('article-input').value;
+            if (text.length < 20) {
+                alert("Please enter at least 20 characters.");
+                return;
+            }
+
+            document.getElementById('results').classList.add('hidden');
+            document.getElementById('loading').classList.remove('hidden');
+
+            fetch('/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            })
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('loading').classList.add('hidden');
+                
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                // Populate results
+                document.getElementById('results').classList.remove('hidden');
+                
+                // Verdict
+                const verdictBadge = document.getElementById('verdict-badge');
+                verdictBadge.textContent = data.verdict;
+                verdictBadge.className = 'verdict-badge ' + data.verdict.replace(' ', '-').toLowerCase();
+
+                // Confidence
+                document.getElementById('fake-percent').textContent = data.confidence_fake + '%';
+                document.getElementById('fake-bar').style.width = data.confidence_fake + '%';
+                document.getElementById('real-percent').textContent = data.confidence_real + '%';
+                document.getElementById('real-bar').style.width = data.confidence_real + '%';
+
+                // Scores
+                const setScore = (id, score) => {
+                    document.getElementById(`${id}-score`).textContent = score + '/10';
+                    document.getElementById(`${id}-bar`).style.width = (score * 10) + '%';
+                };
+                setScore('sens', data.sensationalism_score);
+                setScore('emo', data.emotional_score);
+                setScore('source', data.source_score);
+                setScore('comp', data.complexity_score);
+
+                // Words
+                const renderChips = (words, containerId) => {
+                    const container = document.getElementById(containerId);
+                    container.innerHTML = '';
+                    if (words.length === 0) {
+                        container.innerHTML = '<span class="empty">None</span>';
+                    }
+                    words.forEach(w => {
+                        const span = document.createElement('span');
+                        span.className = 'chip';
+                        span.textContent = w;
+                        container.appendChild(span);
+                    });
+                };
+                renderChips(data.top_fake_words, 'fake-words');
+                renderChips(data.top_real_words, 'real-words');
+
+                // Categories
+                document.getElementById('primary-category').textContent = data.newsgroup_category;
+                document.getElementById('related-categories').innerHTML = data.related_categories
+                    .map(c => `<span class="cat-tag secondary">${c}</span>`).join('');
+
+                // Model Info
+                document.getElementById('model-info').textContent = 
+                    `${data.model_info.algorithm} | Trained on ${data.model_info.training_samples} samples | Word count: ${data.word_count}`;
+            })
+            .catch(err => {
+                document.getElementById('loading').classList.add('hidden');
+                alert("An error occurred during analysis.");
+                console.error(err);
+            });
+        });
+    </script>
+</body>
+</html>
